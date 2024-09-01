@@ -1,0 +1,18 @@
+CREATE DATABASE HomeData COLLATE utf8_general_ci;
+USE HomeData;
+
+SELECT * FROM Home;
+
+CREATE TABLE Home(
+    Home_ID INT AUTO_INCREMENT UNIQUE PRIMARY KEY,
+    Home_Size DECIMAL(10, 2),
+    Home_Bedroom INT DEFAULT 0,
+    Home_Bathroom INT,
+    Home_Price DECIMAL(15, 2),
+    Home_Condition VARCHAR(50),
+    Home_Type VARCHAR(50),
+    Home_YearBuilt YEAR,
+    Home_ParkingSpace INT,
+    Home_Address VARCHAR(255),
+    Home_ImageURL VARCHAR(255)
+);

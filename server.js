@@ -1,8 +1,11 @@
-const rateLimit = require('express-rate-limit');
 const express = require('express');
+const multer = require('multer');
 const mysql = require('mysql2');
-const bcrypt = require('bcrypt');
+const path = require('path');
+const fs = require('fs');
 const dotenv = require('dotenv');
+const { v4: uuidv4 } = require('uuid');
+const sharp = require('sharp');
 
 dotenv.config();
 
@@ -16,93 +19,89 @@ const db = mysql.createConnection({
   database: process.env.DB_NAME
 });
 
-db.connect()
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
+
+db.connect();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use('/uploads', express.static(uploadDir));
 
-//Limit login
-const loginRateLimiter = rateLimit({
-    windowMs: 30 * 60 * 1000, // 30 minutes
-    max: 5, // Limit each IP to 5 requests per windowMs
-    message: { message: "โปรดลองอีกครั้งหลังจากผ่านไป 30 นาที", status: false }
-});
+// เพิ่มข้อมูลบ้าน
+app.post('/api/home/insert', upload.single('Home_Image'), async (req, res) => {
+  const { Home_Size, Home_Bedroom, Home_Bathroom, Home_Price, Home_Condition, Home_Type,
+    Home_YearBuilt, Home_ParkingSpace, Home_Address } = req.body;
 
-// Insert product
-app.post('/product', (req, res) => {
-  const { productName, productDetail, price, cost, quantity } = req.body;
+  if (!req.file) {
+    return res.json({ "message": "ต้องมีภาพประกอบ", "status": false });
+  }
 
   // Validate input
-  if (!productName || !productDetail || !price || !cost || !quantity) {
-    return res.send({ "message": "ข้อมูลที่ส่งมาไม่ครบถ้วน", "status": false });
+  if (!Home_Size || !Home_Bedroom || !Home_Bathroom || !Home_Price || !Home_Condition 
+    || !Home_Type || !Home_YearBuilt || !Home_ParkingSpace || !Home_Address) {
+    return res.json({ "message": "ข้อมูลที่ส่งมาไม่ครบถ้วน", "status": false });
   }
 
-  const sql = "INSERT INTO product (productName, productDetail, price, cost, quantity) VALUES (?, ?, ?, ?, ?)";
-  db.query(sql, [productName, productDetail, price, cost, quantity], (err) => {
+  const uniqueName = uuidv4();
+  const ext = path.extname(req.file.originalname);
+  const resizedImagePath = path.join(uploadDir, `${uniqueName}${ext}`);
+
+  try {
+    await sharp(req.file.buffer)
+      .resize(500, 500) //500x500 pixels
+      .toFile(resizedImagePath);
+
+    const Home_ImageURL = `/uploads/${uniqueName}${ext}`;
+
+    const sql = "INSERT INTO Home (Home_Size, Home_Bedroom, Home_Bathroom, Home_Price, Home_Condition, Home_Type, " +
+      "Home_YearBuilt, Home_ParkingSpace, Home_Address, Home_ImageURL) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    db.query(sql, [Home_Size, Home_Bedroom, Home_Bathroom, Home_Price, Home_Condition, Home_Type,
+      Home_YearBuilt, Home_ParkingSpace, Home_Address, Home_ImageURL], (err) => {
+      if (err) {
+        console.error(err);
+        return res.json({ "message": "เกิดข้อผิดพลาดในการบันทึกข้อมูล", "status": false });
+      }
+      res.json({ 'message': 'บันทึกข้อมูลสำเร็จ', 'status': true });
+    });
+  } catch (error) {
+    console.error(error);
+    return res.json({ "message": "เกิดข้อผิดพลาดในการประมวลผลภาพ", "status": false });
+  }
+});
+
+// ดึงข้อมูลบ้านทั้งหมด
+app.get('/api/home/get', (req, res) => {
+  const sql = "SELECT * FROM Home";
+  db.query(sql, (err, results) => {
     if (err) {
       console.error(err);
-      return res.send({ "message": "เกิดข้อผิดพลาดในการบันทึกข้อมูล", "status": false });
+      return res.json({ "message": "เกิดข้อผิดพลาดในการดึงข้อมูล", "status": false });
     }
-    res.send({ 'message': 'บันทึกข้อมูลสำเร็จ', 'status': true });
+    res.json(results);
   });
 });
 
-// Get product by ID
-app.get('/product/:id', (req, res) => {
-  const productID = req.params.id;
-
-  if (isNaN(productID)) {
-    return res.send({ "message": "ID ของสินค้าต้องเป็นตัวเลข", "status": false });
-  }
-
-  const sql = "SELECT * FROM product WHERE productID = ?";
-  db.query(sql, [productID], (err, result) => {
+// ดึงข้อมูลบ้านตาม ID
+app.get('/api/home/get/:id', (req, res) => {
+  const { id } = req.params;
+  const sql = "SELECT * FROM Home WHERE Home_ID = ?";
+  db.query(sql, [id], (err, results) => {
     if (err) {
       console.error(err);
-      return res.send({ "message": "เกิดข้อผิดพลาดในการดึงข้อมูล", "status": false });
+      return res.json({ "message": "เกิดข้อผิดพลาดในการดึงข้อมูล", "status": false });
     }
-    if (result.length > 0) {
-      res.send(result[0]);
-    } else {
-      res.send({ "message": "ไม่พบสินค้านี้", "status": false });
+    if (results.length === 0) {
+      return res.json({ "message": "ไม่พบข้อมูลผลิตภัณฑ์", "status": false });
     }
+    res.json(results[0]); // ส่งข้อมูลผลิตภัณฑ์เดียวตาม ID
   });
 });
 
-// User login
-app.post('/login', loginRateLimiter, (req, res) => {
-  const { username, password } = req.body;
-
-  if (!username || !password) {
-    return res.send({ "message": "กรุณาระบุชื่อผู้ใช้และรหัสผ่าน", "status": false });
-  }
-
-  const sql = "SELECT * FROM customer WHERE username = ? AND isActive = 1";
-  db.query(sql, [username], (err, result) => {
-    if (err) {
-      console.error(err);
-      return res.send({ "message": "เกิดข้อผิดพลาดในการเข้าสู่ระบบ", "status": false });
-    }
-    if (result.length > 0) {
-      const customer = result[0];
-      bcrypt.compare(password, customer.password, (err, isMatch) => {
-        if (err) {
-          console.error(err);
-          return res.send({ "message": "เกิดข้อผิดพลาดในการตรวจสอบรหัสผ่าน", "status": false });
-        }
-        if (isMatch) {
-          customer['message'] = "เข้าสู่ระบบสำเร็จ";
-          customer['status'] = true;
-          res.send(customer);
-        } else {
-          res.send({ "message": "รหัสผ่านไม่ถูกต้อง", "status": false });
-        }
-      });
-    } else {
-      res.send({ "message": "ไม่พบผู้ใช้ที่ระบุ", "status": false });
-    }
-  });
-});
-
-app.listen(port, function() {
+app.listen(port, function () {
   console.log(`Server listening on port ${port}`);
 });
