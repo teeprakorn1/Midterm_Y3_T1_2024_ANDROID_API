@@ -53,7 +53,7 @@ app.post('/api/home/insert', upload.single('Home_Image'), async (req, res) => {
 
   try {
     await sharp(req.file.buffer)
-      .resize(500, 500) //500x500 pixels
+      .resize(1000, 1000) //1000x1000 pixels
       .toFile(resizedImagePath);
 
     const Home_ImageURL = `/uploads/${uniqueName}${ext}`;
@@ -74,18 +74,6 @@ app.post('/api/home/insert', upload.single('Home_Image'), async (req, res) => {
   }
 });
 
-// ดึงข้อมูลบ้านทั้งหมด
-app.get('/api/home/get', (req, res) => {
-  const sql = "SELECT * FROM Home";
-  db.query(sql, (err, results) => {
-    if (err) {
-      console.error(err);
-      return res.json({ "message": "เกิดข้อผิดพลาดในการดึงข้อมูล", "status": false });
-    }
-    res.json(results);
-  });
-});
-
 // ดึงข้อมูลบ้านตาม ID
 app.get('/api/home/get/:id', (req, res) => {
   const { id } = req.params;
@@ -93,12 +81,16 @@ app.get('/api/home/get/:id', (req, res) => {
   db.query(sql, [id], (err, results) => {
     if (err) {
       console.error(err);
-      return res.json({ "message": "เกิดข้อผิดพลาดในการดึงข้อมูล", "status": false });
+      return res.send({ "message": "เกิดข้อผิดพลาดในการดึงข้อมูล", "status": false });
     }
     if (results.length === 0) {
-      return res.json({ "message": "ไม่พบข้อมูลผลิตภัณฑ์", "status": false });
+      return res.send({ "message": "ไม่พบข้อมูลผลิตภัณฑ์", "status": false });
     }
-    res.json(results[0]); // ส่งข้อมูลผลิตภัณฑ์เดียวตาม ID
+    const home = results[0];
+
+    home['message'] = "ทำรายการสำเร็จ"
+    home['status'] = true
+    res.send(home);
   });
 });
 
